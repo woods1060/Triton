@@ -27,8 +27,10 @@ namespace triton {
     /* ====== Abstract node */
 
     AbstractNode::AbstractNode(triton::ast::ast_e type, const SharedAstContext& ctxt) {
+      this->array       = false;
       this->ctxt        = ctxt;
       this->eval        = 0;
+      this->logical     = false;
       this->size        = 0;
       this->symbolized  = false;
       this->type        = type;
@@ -94,6 +96,27 @@ namespace triton {
 
         case REFERENCE_NODE:
           return this->logical;
+
+        default:
+          break;
+      }
+
+      return false;
+    }
+
+
+    bool AbstractNode::isArray(void) const {
+      switch (this->type) {
+        case ARRAY_NODE:
+        case STORE_NODE:
+          return true;
+        /*
+         * Note that SELECT is not a node of type Array. SELECT returns
+         * a node of type (_ BitVec 8).
+         */
+
+        case REFERENCE_NODE:
+          return this->array;
 
         default:
           break;
@@ -217,6 +240,39 @@ namespace triton {
       if (!s.str().empty())
         return s.str();
       return nullptr;
+    }
+
+
+    /* ====== array */
+
+
+    ArrayNode::ArrayNode(triton::uint32 addrSize, const SharedAstContext& ctxt): AbstractNode(ARRAY_NODE, ctxt) {
+      this->addChild(this->ctxt->integer(addrSize));
+    }
+
+
+    void ArrayNode::init(void) {
+      /* Init attributes */
+      this->size = 0; // An Array does not have size.
+      this->eval = 0; // An Array cannot be evaluated.
+
+      /* Init children and spread information */
+      for (triton::uint32 index = 0; index < this->children.size(); index++) {
+        this->children[index]->setParent(this);
+        this->symbolized |= this->children[index]->isSymbolized();
+      }
+
+      /* Init parents */
+      this->initParents();
+    }
+
+
+    triton::uint512 ArrayNode::hash(triton::uint32 deep) const {
+      triton::uint512 h = this->type, s = this->children.size();
+      if (s) h = h * s;
+      for (triton::uint32 index = 0; index < this->children.size(); index++)
+        h = h * this->children[index]->hash(deep+1);
+      return triton::ast::rotl(h, deep);
     }
 
 
@@ -1678,8 +1734,8 @@ namespace triton {
       if (this->children.size() < 1)
         throw triton::exceptions::Ast("DeclareNode::init(): Must take at least one child.");
 
-      if (this->children[0]->getType() != VARIABLE_NODE)
-        throw triton::exceptions::Ast("DeclareNode::init(): The child node must be a VARIABLE_NODE.");
+      if (this->children[0]->getType() != VARIABLE_NODE && this->children[0]->getType() != ARRAY_NODE)
+        throw triton::exceptions::Ast("DeclareNode::init(): The child node must be a VARIABLE_NODE or an ARRAY_NODE.");
 
       /* Init attributes */
       this->size = this->children[0]->getBitvectorSize();
@@ -2132,6 +2188,7 @@ namespace triton {
 
     void ReferenceNode::init(void) {
       /* Init attributes */
+      this->array       = this->expr->getAst()->isArray();
       this->eval        = this->expr->getAst()->evaluate();
       this->logical     = this->expr->getAst()->isLogical();
       this->size        = this->expr->getAst()->getBitvectorSize();
@@ -2152,6 +2209,111 @@ namespace triton {
 
     const triton::engines::symbolic::SharedSymbolicExpression& ReferenceNode::getSymbolicExpression(void) const {
       return this->expr;
+    }
+
+
+    /* ====== Select node */
+
+    SelectNode::SelectNode(const SharedAbstractNode& array, triton::usize index): AbstractNode(SELECT_NODE, array->getContext()) {
+      if (array->isArray() == false)
+        throw triton::exceptions::Ast("SelectNode::init(): Must take an array as first argument.");
+
+      this->addChild(array);
+      this->addChild(this->ctxt->bv(index, this->ctxt->getArraySize()));
+    }
+
+
+    SelectNode::SelectNode(const SharedAbstractNode& array, const SharedAbstractNode& index): AbstractNode(SELECT_NODE, array->getContext()) {
+      this->addChild(array);
+      this->addChild(index);
+    }
+
+
+    void SelectNode::init(void) {
+      if (this->children.size() != 2)
+        throw triton::exceptions::Ast("SelectNode::init(): Must take two children.");
+
+      if (this->children[0]->isArray() == false)
+        throw triton::exceptions::Ast("SelectNode::init(): Must take an array as first argument.");
+
+      if (this->ctxt->getArraySize() != this->children[1]->getBitvectorSize())
+        throw triton::exceptions::Ast("SelectNode::init(): Size of indexing must be equal.");
+
+      /* Init attributes */
+      this->eval = 0; // FIXME: Should be the evaluation of the returned expression.
+      this->size = 8; // Select returns a node of type (_ BitVec 8). In others words, it returns the memory cell read.
+
+      /* Init children and spread information */
+      for (triton::uint32 index = 0; index < this->children.size(); index++) {
+        this->children[index]->setParent(this);
+        this->symbolized |= this->children[index]->isSymbolized();
+      }
+
+      /* Init parents */
+      this->initParents();
+    }
+
+
+    triton::uint512 SelectNode::hash(triton::uint32 deep) const {
+      triton::uint512 h = this->type, s = this->children.size();
+      if (s) h = h * s;
+      for (triton::uint32 index = 0; index < this->children.size(); index++)
+        h = h * triton::ast::hash2n(this->children[index]->hash(deep+1), index+1);
+      return triton::ast::rotl(h, deep);
+    }
+
+
+    /* ====== Store node */
+
+
+    StoreNode::StoreNode(const SharedAbstractNode& array, triton::usize index, const SharedAbstractNode& expr): AbstractNode(STORE_NODE, array->getContext()) {
+      if (array->isArray() == false)
+        throw triton::exceptions::Ast("StoreNode::init(): Must take an array as first argument.");
+
+      this->addChild(array);
+      this->addChild(this->ctxt->bv(index, this->ctxt->getArraySize()));
+      this->addChild(expr);
+    }
+
+
+    StoreNode::StoreNode(const SharedAbstractNode& array, const SharedAbstractNode& index, const SharedAbstractNode& expr): AbstractNode(STORE_NODE, array->getContext()) {
+      this->addChild(array);
+      this->addChild(index);
+      this->addChild(expr);
+    }
+
+
+    void StoreNode::init(void) {
+      if (this->children.size() != 3)
+        throw triton::exceptions::Ast("StoreNode::init(): Must take three children.");
+
+      if (this->children[0]->isArray() == false)
+        throw triton::exceptions::Ast("StoreNode::init(): Must take an array as first argument.");
+
+      if (this->ctxt->getArraySize() != this->children[1]->getBitvectorSize())
+        throw triton::exceptions::Ast("StoreNode::init(): Size of indexing must be equal.");
+
+      /* Init attributes */
+      this->eval = this->children[2]->evaluate();
+      this->size = this->children[2]->getBitvectorSize();
+
+      /* Init children and spread information */
+      for (triton::uint32 index = 0; index < this->children.size(); index++) {
+        this->children[index]->setParent(this);
+        this->symbolized |= this->children[index]->isSymbolized();
+      }
+
+      /* Init parents */
+      this->initParents();
+    }
+
+
+    triton::uint512 StoreNode::hash(triton::uint32 deep) const {
+      triton::uint512 h = this->type, s = this->children.size();
+      if (s) h = h * s;
+      for (triton::uint32 index = 0; index < this->children.size(); index++)
+        h = h * triton::ast::hash2n(this->children[index]->hash(deep+1), index+1);
+      return triton::ast::rotl(h, deep);
     }
 
 
@@ -2411,6 +2573,7 @@ namespace triton {
         return nullptr;
 
       switch (node->getType()) {
+        case ARRAY_NODE:                newNode = std::make_shared<ArrayNode>(*reinterpret_cast<ArrayNode*>(node));       break;
         case ASSERT_NODE:               newNode = std::make_shared<AssertNode>(*reinterpret_cast<AssertNode*>(node));     break;
         case BVADD_NODE:                newNode = std::make_shared<BvaddNode>(*reinterpret_cast<BvaddNode*>(node));       break;
         case BVAND_NODE:                newNode = std::make_shared<BvandNode>(*reinterpret_cast<BvandNode*>(node));       break;
@@ -2462,6 +2625,8 @@ namespace triton {
             newNode = std::make_shared<ReferenceNode>(*reinterpret_cast<ReferenceNode*>(node));
           break;
         }
+        case SELECT_NODE:               newNode = std::make_shared<SelectNode>(*reinterpret_cast<SelectNode*>(node));     break;
+        case STORE_NODE:                newNode = std::make_shared<StoreNode>(*reinterpret_cast<StoreNode*>(node));       break;
         case STRING_NODE:               newNode = std::make_shared<StringNode>(*reinterpret_cast<StringNode*>(node));     break;
         case SX_NODE:                   newNode = std::make_shared<SxNode>(*reinterpret_cast<SxNode*>(node));             break;
         case VARIABLE_NODE:             newNode = node->shared_from_this(); /* Do not duplicate shared var (see #792) */  break;

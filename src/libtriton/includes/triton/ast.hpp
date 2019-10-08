@@ -72,8 +72,7 @@ namespace triton {
         //! The children of the node.
         std::vector<SharedAbstractNode> children;
 
-        // This structure counter the number of use of a given parent as a node may have
-        // multiple time the same parent: eg. xor rax rax
+        //! This structure counter the number of use of a given parent as a node may have multiple time the same parent: eg. xor rax rax
         std::map<AbstractNode*, std::pair<triton::uint32, WeakAbstractNode>> parents;
 
         //! The size of the node.
@@ -87,6 +86,9 @@ namespace triton {
 
         //! True if it's a logical node.
         bool logical;
+
+        //! True if it's an array node.
+        bool array;
 
         //! Contect use to create this node
         SharedAstContext ctxt;
@@ -109,6 +111,9 @@ namespace triton {
 
         //! Returns the vector mask according the size of the node.
         TRITON_EXPORT triton::uint512 getBitvectorMask(void) const;
+
+        //! Returns true if it's an array node.
+        TRITON_EXPORT bool isArray(void) const;
 
         //! According to the size of the expression, returns true if the MSB is 1.
         TRITON_EXPORT bool isSigned(void) const;
@@ -160,6 +165,15 @@ namespace triton {
 
         //! Returns the has of the tree. The hash is computed recursively on the whole tree.
         TRITON_EXPORT virtual triton::uint512 hash(triton::uint32 deep) const = 0;
+    };
+
+
+    //! `(Array (_ BitVec addrSize) (_ BitVec 8))` node
+    class ArrayNode : public AbstractNode {
+      public:
+        TRITON_EXPORT ArrayNode(triton::uint32 addrSize, const SharedAstContext& ctxt);
+        TRITON_EXPORT void init(void);
+        TRITON_EXPORT triton::uint512 hash(triton::uint32 deep) const;
     };
 
 
@@ -598,6 +612,26 @@ namespace triton {
         TRITON_EXPORT void init(void);
         TRITON_EXPORT triton::uint512 hash(triton::uint32 deep) const;
         TRITON_EXPORT const triton::engines::symbolic::SharedSymbolicExpression& getSymbolicExpression(void) const;
+    };
+
+
+    //! `(select array index)`
+    class SelectNode : public AbstractNode {
+      public:
+        TRITON_EXPORT SelectNode(const SharedAbstractNode& array, triton::usize index);
+        TRITON_EXPORT SelectNode(const SharedAbstractNode& array, const SharedAbstractNode& index);
+        TRITON_EXPORT void init(void);
+        TRITON_EXPORT triton::uint512 hash(triton::uint32 deep) const;
+    };
+
+
+    //! `(store array index expr)`
+    class StoreNode : public AbstractNode {
+      public:
+        TRITON_EXPORT StoreNode(const SharedAbstractNode& array, triton::usize index, const SharedAbstractNode& expr);
+        TRITON_EXPORT StoreNode(const SharedAbstractNode& array, const SharedAbstractNode& index, const SharedAbstractNode& expr);
+        TRITON_EXPORT void init(void);
+        TRITON_EXPORT triton::uint512 hash(triton::uint32 deep) const;
     };
 
 

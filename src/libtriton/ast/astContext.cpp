@@ -20,6 +20,7 @@ namespace triton {
 
     AstContext::AstContext(const triton::modes::SharedModes& modes)
       : modes(modes) {
+      this->arraySize = 0;
     }
 
 
@@ -28,6 +29,7 @@ namespace triton {
         modes(other.modes),
         astRepresentation(other.astRepresentation),
         valueMapping(other.valueMapping) {
+      this->arraySize = 0;
     }
 
 
@@ -39,11 +41,24 @@ namespace triton {
     AstContext& AstContext::operator=(const AstContext& other) {
       std::enable_shared_from_this<AstContext>::operator=(other);
 
+      this->arraySize         = other.arraySize;
       this->astRepresentation = other.astRepresentation;
       this->modes             = other.modes;
       this->valueMapping      = other.valueMapping;
 
       return *this;
+    }
+
+
+    SharedAbstractNode AstContext::array(triton::uint32 addrSize) {
+      this->arraySize = addrSize;
+
+      SharedAbstractNode node = std::make_shared<ArrayNode>(addrSize, this->shared_from_this());
+      if (node == nullptr)
+        throw triton::exceptions::Ast("AstContext::array(): Not enough memory.");
+
+      node->init();
+      return node;
     }
 
 
@@ -79,8 +94,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvaddNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvadd(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -111,8 +126,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvandNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvand(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -131,8 +146,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvashrNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvashr(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -164,8 +179,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvlshrNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvlshr(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -184,8 +199,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvmulNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvmul(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -252,8 +267,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvorNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvor(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -269,13 +284,13 @@ namespace triton {
 
     SharedAbstractNode AstContext::bvrol(const SharedAbstractNode& expr, const SharedAbstractNode& rot) {
       /*
-       * If the mode SYMBOLIZE_INDEX_ROTATION we apply a AST transformation
+       * If the mode SYMBOLIC_INDEX_ROTATION we apply a AST transformation
        * in order to make index rotation symbolic. Note that this mode increases the
        * complexity of solving.
        *
        * bvrol(rot, expr) = ((expr << (rot % size)) | (expr >> (size - (rot % size))))
        **/
-      if (this->modes->isModeEnabled(triton::modes::SYMBOLIZE_INDEX_ROTATION)) {
+      if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_INDEX_ROTATION)) {
         auto size   = expr->getBitvectorSize();
         auto bvsize = this->bv(size, size);
         auto node   = this->bvor(
@@ -289,8 +304,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvrolNode>(expr, this->integer(rot->evaluate()));
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvrol(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -306,13 +321,13 @@ namespace triton {
 
     SharedAbstractNode AstContext::bvror(const SharedAbstractNode& expr, const SharedAbstractNode& rot) {
       /*
-       * If the mode SYMBOLIZE_INDEX_ROTATION we apply a AST transformation
+       * If the mode SYMBOLIC_INDEX_ROTATION we apply a AST transformation
        * in order to make index rotation symbolic. Note that this mode increases the
        * complexity of solving.
        *
        * bvror(rot, expr) = ((value >> (rot % size)) | (value << (size - (rot % size))))
        **/
-      if (this->modes->isModeEnabled(triton::modes::SYMBOLIZE_INDEX_ROTATION)) {
+      if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_INDEX_ROTATION)) {
         auto size   = expr->getBitvectorSize();
         auto bvsize = this->bv(size, size);
         auto node   = this->bvor(
@@ -326,8 +341,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvrorNode>(expr, this->integer(rot->evaluate()));
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvror(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -342,8 +357,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvsdivNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvsdiv(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -384,8 +399,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvshlNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvshl(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -444,8 +459,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvsubNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvsub(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -469,8 +484,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvudivNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvudiv(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -547,8 +562,8 @@ namespace triton {
       SharedAbstractNode node = std::make_shared<BvxorNode>(expr1, expr2);
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::bvxor(): Not enough memory.");
-      node->init();
 
+      node->init();
       return node;
     }
 
@@ -603,7 +618,6 @@ namespace triton {
         return expr;
 
       SharedAbstractNode node = std::make_shared<ExtractNode>(high, low, expr);
-
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::extract(): Not enough memory.");
 
@@ -692,6 +706,42 @@ namespace triton {
     }
 
 
+    SharedAbstractNode AstContext::select(const SharedAbstractNode& array, triton::usize index) {
+      SharedAbstractNode node = std::make_shared<SelectNode>(array, index);
+      if (node == nullptr)
+        throw triton::exceptions::Ast("AstContext::select(): Not enough memory.");
+      node->init();
+      return node;
+    }
+
+
+    SharedAbstractNode AstContext::select(const SharedAbstractNode& array, const SharedAbstractNode& index) {
+      SharedAbstractNode node = std::make_shared<SelectNode>(array, index);
+      if (node == nullptr)
+        throw triton::exceptions::Ast("AstContext::select(): Not enough memory.");
+      node->init();
+      return node;
+    }
+
+
+    SharedAbstractNode AstContext::store(const SharedAbstractNode& array, triton::usize index, const SharedAbstractNode& expr) {
+      SharedAbstractNode node = std::make_shared<StoreNode>(array, index, expr);
+      if (node == nullptr)
+        throw triton::exceptions::Ast("AstContext::store(): Not enough memory.");
+      node->init();
+      return node;
+    }
+
+
+    SharedAbstractNode AstContext::store(const SharedAbstractNode& array, const SharedAbstractNode& index, const SharedAbstractNode& expr) {
+      SharedAbstractNode node = std::make_shared<StoreNode>(array, index, expr);
+      if (node == nullptr)
+        throw triton::exceptions::Ast("AstContext::store(): Not enough memory.");
+      node->init();
+      return node;
+    }
+
+
     SharedAbstractNode AstContext::string(std::string value) {
       SharedAbstractNode node = std::make_shared<StringNode>(value, this->shared_from_this());
       if (node == nullptr)
@@ -707,7 +757,6 @@ namespace triton {
         return expr;
 
       SharedAbstractNode node = std::make_shared<SxNode>(sizeExt, expr);
-
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::sx(): Not enough memory.");
 
@@ -749,7 +798,6 @@ namespace triton {
         return expr;
 
       SharedAbstractNode node = std::make_shared<ZxNode>(sizeExt, expr);
-
       if (node == nullptr)
         throw triton::exceptions::Ast("AstContext::zx(): Not enough memory.");
 
@@ -824,6 +872,11 @@ namespace triton {
 
     std::ostream& AstContext::print(std::ostream& stream, AbstractNode* node) {
       return this->astRepresentation.print(stream, node);
+    }
+
+
+    triton::uint16 AstContext::getArraySize(void) const {
+      return this->arraySize;
     }
 
   }; /* ast namespace */

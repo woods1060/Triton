@@ -23,6 +23,7 @@ namespace triton {
       /* Representation dispatcher from an abstract node */
       std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::AbstractNode* node) {
         switch (node->getType()) {
+          case ARRAY_NODE:                return this->print(stream, reinterpret_cast<triton::ast::ArrayNode*>(node)); break;
           case ASSERT_NODE:               return this->print(stream, reinterpret_cast<triton::ast::AssertNode*>(node)); break;
           case BVADD_NODE:                return this->print(stream, reinterpret_cast<triton::ast::BvaddNode*>(node)); break;
           case BVAND_NODE:                return this->print(stream, reinterpret_cast<triton::ast::BvandNode*>(node)); break;
@@ -68,6 +69,8 @@ namespace triton {
           case LNOT_NODE:                 return this->print(stream, reinterpret_cast<triton::ast::LnotNode*>(node)); break;
           case LOR_NODE:                  return this->print(stream, reinterpret_cast<triton::ast::LorNode*>(node)); break;
           case REFERENCE_NODE:            return this->print(stream, reinterpret_cast<triton::ast::ReferenceNode*>(node)); break;
+          case SELECT_NODE:               return this->print(stream, reinterpret_cast<triton::ast::SelectNode*>(node)); break;
+          case STORE_NODE:                return this->print(stream, reinterpret_cast<triton::ast::StoreNode*>(node)); break;
           case STRING_NODE:               return this->print(stream, reinterpret_cast<triton::ast::StringNode*>(node)); break;
           case SX_NODE:                   return this->print(stream, reinterpret_cast<triton::ast::SxNode*>(node)); break;
           case VARIABLE_NODE:             return this->print(stream, reinterpret_cast<triton::ast::VariableNode*>(node)); break;
@@ -75,6 +78,13 @@ namespace triton {
           default:
             throw triton::exceptions::AstRepresentation("AstPythonRepresentation::print(AbstractNode): Invalid kind node.");
         }
+        return stream;
+      }
+
+
+      /* array representation */
+      std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::ArrayNode* node) {
+        stream << "Memory";
         return stream;
       }
 
@@ -326,11 +336,21 @@ namespace triton {
 
       /* declare representation */
       std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::DeclareNode* node) {
-        const triton::engines::symbolic::SharedSymbolicVariable& var = reinterpret_cast<triton::ast::VariableNode*>(node->getChildren()[0].get())->getSymbolicVariable();
-        if (var->getAlias().empty())
-          stream << var->getName() << " = " << "0xdeadbeef";
+        if (node->getChildren()[0]->getType() == VARIABLE_NODE) {
+          const auto& var = reinterpret_cast<triton::ast::VariableNode*>(node->getChildren()[0].get())->getSymbolicVariable();
+          if (var->getAlias().empty())
+            stream << var->getName() << " = int()";
+          else
+            stream << var->getAlias() << " = int()";
+        }
+
+        else if (node->getChildren()[0]->getType() == ARRAY_NODE) {
+          stream << node->getChildren()[0] << " =  dict()";
+        }
+
         else
-          stream << var->getAlias() << " = " << "0xdeadbeef";
+          throw triton::exceptions::AstRepresentation("AstSmtRepresentation::print(DeclareNode): Invalid sort.");
+
         return stream;
       }
 
@@ -426,6 +446,20 @@ namespace triton {
       /* reference representation */
       std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::ReferenceNode* node) {
         stream << "ref_" << node->getSymbolicExpression()->getId();
+        return stream;
+      }
+
+
+      /* select representation */
+      std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::SelectNode* node) {
+        stream << "(" << node->getChildren()[0] << "[" << node->getChildren()[1] << "])";
+        return stream;
+      }
+
+
+      /* store representation */
+      std::ostream& AstPythonRepresentation::print(std::ostream& stream, triton::ast::StoreNode* node) {
+        stream << "(" << node->getChildren()[0] << " if " << node->getChildren()[0] << ".update({" << node->getChildren()[1] << ": " << node->getChildren()[2] << "}) is None else " << node->getChildren()[0] << ")";
         return stream;
       }
 

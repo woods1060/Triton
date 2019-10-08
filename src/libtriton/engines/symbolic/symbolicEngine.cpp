@@ -35,8 +35,9 @@ namespace triton {
         this->callbacks         = callbacks;
         this->enableFlag        = true;
         this->numberOfRegisters = this->architecture->numberOfRegisters();
-        this->uniqueSymExprId   = 0;
+        this->uniqueSymExprId   = -1; // FIXME: Should be zero but it's just for unittest atm
         this->uniqueSymVarId    = 0;
+        this->symbolicArray     = this->newSymbolicExpression(this->astCtxt->array(architecture->gprBitSize()), MEMORY_EXPRESSION, "Initial Memory Array");
 
         this->symbolicReg.resize(this->numberOfRegisters);
       }
@@ -54,6 +55,7 @@ namespace triton {
         this->enableFlag                  = other.enableFlag;
         this->memoryReference             = other.memoryReference;
         this->numberOfRegisters           = other.numberOfRegisters;
+        this->symbolicArray               = other.symbolicArray;
         this->symbolicExpressions         = other.symbolicExpressions;
         this->symbolicReg                 = other.symbolicReg;
         this->symbolicVariables           = other.symbolicVariables;
@@ -74,6 +76,7 @@ namespace triton {
         this->memoryReference             = other.memoryReference;
         this->modes                       = other.modes;
         this->numberOfRegisters           = other.numberOfRegisters;
+        this->symbolicArray               = other.symbolicArray;
         this->symbolicExpressions         = other.symbolicExpressions;
         this->symbolicReg                 = other.symbolicReg;
         this->symbolicVariables           = other.symbolicVariables;
@@ -156,6 +159,10 @@ namespace triton {
 
       /* Adds an aligned memory */
       void SymbolicEngine::addAlignedMemory(triton::uint64 address, triton::uint32 size, const SharedSymbolicExpression& expr) {
+        /* ALIGNED_MEMORY does not work with SYMBOLIC_LOAD or SYMBOLIC_STORE modes */
+        if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_LOAD) || this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE))
+          return;
+
         this->removeAlignedMemory(address, size);
         if (!(this->modes->isModeEnabled(triton::modes::ONLY_ON_SYMBOLIZED) && expr->getAst()->isSymbolized() == false))
           this->alignedMemoryReference[std::make_pair(address, size)] = expr;
@@ -483,11 +490,56 @@ namespace triton {
       }
 
 
-      /* The memory size is used to define the symbolic variable's size. */
+      /* Convert a memory cell to a symbolic variable according to the BV logic */
+      void SymbolicEngine::convertBVMemoryToSymbolicVariable(const triton::arch::MemoryAccess& mem, triton::sint32 index, const triton::ast::SharedAbstractNode& varNode) {
+          triton::uint64 baseAddr = mem.getAddress();
+
+          /* Check if the memory address is already defined */
+          SharedSymbolicExpression se = this->getSymbolicMemory(baseAddr + index);
+          if (se == nullptr) {
+            se = this->newSymbolicExpression(varNode, MEMORY_EXPRESSION, "Byte reference");
+            /* Add the new memory reference */
+            this->addMemoryReference(baseAddr + index, se);
+          }
+          else {
+            se->setAst(varNode);
+          }
+          /* Defines the origin of the expression */
+          se->setOriginMemory(triton::arch::MemoryAccess(baseAddr + index, BYTE_SIZE));
+      }
+
+
+      /* Convert a memory cell to a symbolic variable according to the ABV logic */
+      void SymbolicEngine::convertABVMemoryToSymbolicVariable(const triton::arch::MemoryAccess& mem, triton::sint32 index, const triton::ast::SharedAbstractNode& varNode) {
+          triton::ast::SharedAbstractNode lea      = mem.getLeaAst();
+          triton::ast::SharedAbstractNode newArray = nullptr;
+          triton::uint32 size                      = this->architecture->gprBitSize();
+
+          /* Keep the index concrete if SYMBOLIC_STORE is disabled. */
+          if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE) && lea != nullptr) {
+            newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), this->astCtxt->bvadd(lea, this->astCtxt->bv(index, size)), varNode);
+          }
+          else {
+            newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), mem.getAddress() + index, varNode);
+          }
+
+          /* Create a new symbolic expression with the new array */
+          SharedSymbolicExpression se = this->newSymbolicExpression(newArray, MEMORY_EXPRESSION, "Byte reference");
+
+          /* Assigne the new memory state */
+          // FIXME: Trop de dependances liées les unes aux autres. On tombe dans le probleme #753.
+          this->symbolicArray = se;
+
+          /* Defines the origin of the expression */
+          se->setOriginMemory(triton::arch::MemoryAccess(mem.getAddress() + index, BYTE_SIZE));
+      }
+
+
+      /* Convert memory cells to a symbolic variable */
       SharedSymbolicVariable SymbolicEngine::convertMemoryToSymbolicVariable(const triton::arch::MemoryAccess& mem, const std::string& symVarComment) {
-        triton::uint64 memAddr          = mem.getAddress();
-        triton::uint32 symVarSize       = mem.getSize();
-        triton::uint512 cv              = this->architecture->getConcreteMemoryValue(mem);
+        triton::uint64 memAddr              = mem.getAddress();
+        triton::uint32 symVarSize           = mem.getSize();
+        triton::uint512 cv                  = this->architecture->getConcreteMemoryValue(mem);
 
         /* First we create a symbolic variable */
         const SharedSymbolicVariable& symVar = this->newSymbolicVariable(MEMORY_VARIABLE, memAddr, symVarSize * BYTE_SIZE_BIT, symVarComment);
@@ -510,20 +562,18 @@ namespace triton {
           triton::uint32 low  = ((BYTE_SIZE_BIT * (index + 1)) - BYTE_SIZE_BIT);
 
           /* Isolate the good part of the symbolic variable */
-          const triton::ast::SharedAbstractNode& tmp = this->astCtxt->extract(high, low, symVarNode);
+          const triton::ast::SharedAbstractNode& cell = this->astCtxt->extract(high, low, symVarNode);
 
-          /* Check if the memory address is already defined */
-          SharedSymbolicExpression se = this->getSymbolicMemory(memAddr+index);
-          if (se == nullptr) {
-            se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Byte reference");
-            /* Add the new memory reference */
-            this->addMemoryReference(memAddr+index, se);
+          /* ---------- Update the BV memory model ----------- */
+          this->convertBVMemoryToSymbolicVariable(mem, index, cell);
+
+          /* ---------- Update the ABV memory model ---------- */
+          if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE)) {
+            // FIXME: À discuter, ici, il faudrait garder une synchro entre les deux modèles. Le problème, c'est que lie trop
+            // de dépendances les unes aux autres. Du coup, on update symbolicArray que si le mode est activé. Ce qui implique
+            // de devoir faire la synchro dès lorsque le SYMBOLIC_STORE/READ est activé...
+            this->convertABVMemoryToSymbolicVariable(mem, index, cell);
           }
-          else {
-            se->setAst(tmp);
-          }
-          /* Defines the origin of the expression */
-          se->setOriginMemory(triton::arch::MemoryAccess(memAddr+index, BYTE_SIZE));
         }
 
         return symVar;
@@ -676,17 +726,64 @@ namespace triton {
       }
 
 
-      /* Returns the AST corresponding to the memory */
+      /* Returns the AST corresponding to the memory according the QF_BV logic */
+      void SymbolicEngine::getBVMemoryAst(const triton::arch::MemoryAccess& mem, triton::uint32 index, triton::uint512& value, std::list<triton::ast::SharedAbstractNode>& out) {
+        triton::uint8 concreteValue[DQQWORD_SIZE] = {0};
+        triton::ast::SharedAbstractNode node = nullptr;
+
+        /* cast integer value into raw */
+        triton::utils::fromUintToBuffer(value, concreteValue);
+
+        /* Check if the symbolic expression already exists */
+        const SharedSymbolicExpression& se = this->getSymbolicMemory(mem.getAddress() + index);
+
+        /* If the memory cell is symbolic, return it's reference */
+        if (se != nullptr) {
+          node = this->astCtxt->reference(se);
+          out.push_back(this->astCtxt->extract((BYTE_SIZE_BIT - 1), 0, node));
+        }
+        /* Otherwise, use the concerte value */
+        else {
+          node = this->astCtxt->bv(concreteValue[index], BYTE_SIZE_BIT);
+          out.push_back(this->astCtxt->extract((BYTE_SIZE_BIT - 1), 0, node));
+        }
+      }
+
+
+      /* Returns the AST corresponding to the memory according the QF_BV logic */
+      void SymbolicEngine::getABVMemoryAst(const triton::arch::MemoryAccess& mem, triton::uint32 index, std::list<triton::ast::SharedAbstractNode>& out) {
+        triton::ast::SharedAbstractNode lea  = mem.getLeaAst();
+        triton::ast::SharedAbstractNode node = nullptr;
+
+        /* If the LEA exists, keep it symbolic */
+        if (lea != nullptr) {
+          node = this->astCtxt->select(
+                   this->astCtxt->reference(this->symbolicArray),
+                   this->astCtxt->bvadd(mem.getLeaAst(), this->astCtxt->bv(index, mem.getLeaAst()->getBitvectorSize()))
+                 );
+        }
+
+        /* Otherwise, concretize the memory indexing */
+        else {
+          node = this->astCtxt->select(
+                   this->astCtxt->reference(this->symbolicArray),
+                   mem.getAddress() + index
+                 );
+        }
+
+        out.push_back(this->astCtxt->extract((BYTE_SIZE_BIT - 1), 0, node));
+      }
+
+
+      /* Returns the AST corresponding to the memory according the QF_BV logic */
       triton::ast::SharedAbstractNode SymbolicEngine::getMemoryAst(const triton::arch::MemoryAccess& mem) {
         std::list<triton::ast::SharedAbstractNode> opVec;
+        triton::ast::SharedAbstractNode node       = nullptr;
+        triton::uint64 address                     = mem.getAddress();
+        triton::uint32 size                        = mem.getSize();
+        triton::uint512 value                      = this->architecture->getConcreteMemoryValue(mem);
+        bool isSymbolicLoad                        = this->modes->isModeEnabled(triton::modes::SYMBOLIC_LOAD);
 
-        triton::ast::SharedAbstractNode tmp       = nullptr;
-        triton::uint64 address                    = mem.getAddress();
-        triton::uint32 size                       = mem.getSize();
-        triton::uint8 concreteValue[DQQWORD_SIZE] = {0};
-        triton::uint512 value                     = this->architecture->getConcreteMemoryValue(mem);
-
-        triton::utils::fromUintToBuffer(value, concreteValue);
 
         /*
          * Symbolic optimization
@@ -699,17 +796,7 @@ namespace triton {
 
         /* Iterate on every memory cells to use their symbolic or concrete values */
         while (size) {
-          const SharedSymbolicExpression& symMem = this->getSymbolicMemory(address + size - 1);
-          /* Check if the memory cell is already symbolic */
-          if (symMem != nullptr) {
-            tmp = this->astCtxt->reference(symMem);
-            opVec.push_back(this->astCtxt->extract((BYTE_SIZE_BIT - 1), 0, tmp));
-          }
-          /* Otherwise, use the concerte value */
-          else {
-            tmp = this->astCtxt->bv(concreteValue[size - 1], BYTE_SIZE_BIT);
-            opVec.push_back(this->astCtxt->extract((BYTE_SIZE_BIT - 1), 0, tmp));
-          }
+          isSymbolicLoad ? this->getABVMemoryAst(mem, size - 1, opVec) : this->getBVMemoryAst(mem, size - 1, value, opVec);
           size--;
         }
 
@@ -721,14 +808,14 @@ namespace triton {
           case QWORD_SIZE:
           case DWORD_SIZE:
           case WORD_SIZE:
-            tmp = this->astCtxt->concat(opVec);
+            node = this->astCtxt->concat(opVec);
             break;
           case BYTE_SIZE:
-            tmp = opVec.front();
+            node = opVec.front();
             break;
         }
 
-        return tmp;
+        return node;
       }
 
 
@@ -807,13 +894,69 @@ namespace triton {
       }
 
 
-      /* Returns the new symbolic memory expression */
+      /* Create a new symbolic memory expression according to the BV logic */
+      SharedSymbolicExpression SymbolicEngine::createBVSymbolicMemoryExpression(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node, const std::string& comment, std::list<triton::ast::SharedAbstractNode>& out) {
+        /* Assign each byte to a new symbolic expression */
+        const SharedSymbolicExpression& se = this->newSymbolicExpression(node, MEMORY_EXPRESSION, "Byte reference - " + comment);
+
+        /* Set the origin of the symbolic expression */
+        se->setOriginMemory(triton::arch::MemoryAccess(mem.getAddress() + index, BYTE_SIZE));
+
+        /* Assign memory with little endian */
+        this->addMemoryReference(mem.getAddress() + index, se);
+
+        /* out is used for the final expression. Only add the node if we use this logic */
+        if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE) == false) {
+          out.push_back(node);
+        }
+
+        return se;
+      }
+
+
+      /* Create a new symbolic memory expression according to the ABV logic */
+      SharedSymbolicExpression SymbolicEngine::createABVSymbolicMemoryExpression(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node, const std::string& comment, std::list<triton::ast::SharedAbstractNode>& out) {
+        triton::ast::SharedAbstractNode newArray = nullptr;
+        triton::ast::SharedAbstractNode lea      = mem.getLeaAst();
+        SharedSymbolicExpression se              = nullptr;
+        triton::uint32 size                      = this->architecture->gprBitSize();
+
+        /* If the LEA exists, keep it symbolic */
+        if (lea != nullptr) {
+          newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), this->astCtxt->bvadd(lea, this->astCtxt->bv(index, size)), node);
+        }
+
+        /* Otherwise, concretize the memory indexing */
+        else {
+          newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), mem.getAddress() + index, node);
+        }
+
+        /* Assign each byte to a new symbolic expression */
+        se = this->newSymbolicExpression(newArray, MEMORY_EXPRESSION, "Byte reference - " + comment);
+
+        /* Set the origin of the symbolic expression */
+        se->setOriginMemory(triton::arch::MemoryAccess(mem.getAddress() + index, BYTE_SIZE));
+
+        /* out is used for the final expression. Only add the node if we use this logic */
+        if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE) == true) {
+          out.push_back(newArray);
+        }
+
+        /* Assigne the new memory state */
+        // FIXME: Trop de dependances liées les unes aux autres. On tombe dans le probleme #753.
+        this->symbolicArray = se;
+
+        return se;
+      }
+
+
+      /* Create a new symbolic memory expression */
       const SharedSymbolicExpression& SymbolicEngine::createSymbolicMemoryExpression(triton::arch::Instruction& inst, const triton::ast::SharedAbstractNode& node, const triton::arch::MemoryAccess& mem, const std::string& comment) {
         std::list<triton::ast::SharedAbstractNode> ret;
-        triton::ast::SharedAbstractNode tmp = nullptr;
-        SharedSymbolicExpression se         = nullptr;
-        triton::uint64 address              = mem.getAddress();
-        triton::uint32 writeSize            = mem.getSize();
+        triton::ast::SharedAbstractNode tmp        = nullptr;
+        SharedSymbolicExpression se                = nullptr;
+        triton::uint64 address                     = mem.getAddress();
+        triton::uint32 writeSize                   = mem.getSize();
 
         /* Record the aligned memory for a symbolic optimization */
         if (this->modes->isModeEnabled(triton::modes::ALIGNED_MEMORY)) {
@@ -828,29 +971,39 @@ namespace triton {
         while (writeSize) {
           triton::uint32 high = ((writeSize * BYTE_SIZE_BIT) - 1);
           triton::uint32 low  = ((writeSize * BYTE_SIZE_BIT) - BYTE_SIZE_BIT);
+
           /* Extract each byte of the memory */
-          tmp = this->astCtxt->extract(high, low, node);
-          /* Assign each byte to a new symbolic expression */
-          se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Byte reference - " + comment);
-          /* Set the origin of the symbolic expression */
-          se->setOriginMemory(triton::arch::MemoryAccess(((address + writeSize) - 1), BYTE_SIZE));
-          /* ret is the for the final expression */
-          ret.push_back(tmp);
-          /* add the symbolic expression to the instruction */
-          inst.addSymbolicExpression(se);
-          /* Assign memory with little endian */
-          this->addMemoryReference((address + writeSize) - 1, se);
+          const triton::ast::SharedAbstractNode& cell = this->astCtxt->extract(high, low, node);
+
+          /* ---------- Update the BV memory model ----------- */
+
+          se = this->createBVSymbolicMemoryExpression(mem, writeSize - 1, cell, comment, ret);
+          if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE) == false) {
+            inst.addSymbolicExpression(se);
+          }
+
+          /* ---------- Update the ABV memory model ---------- */
+
+          // FIXME: À discuter, ici, il faudrait garder une synchro entre les deux modèles. Le problème, c'est que lie trop
+          // de dépendances les unes aux autres. Du coup, on update symbolicArray que si le mode est activé. Ce qui implique
+          // de devoir faire la synchro dès lorsque le SYMBOLIC_STORE/READ est activé...
+          if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE) == true) {
+            se = this->createABVSymbolicMemoryExpression(mem, writeSize - 1, cell, comment, ret);
+            inst.addSymbolicExpression(se); // inst.addSym ici ne doit être ajouté que si STORE est activé.
+          }
+
           /* continue */
           writeSize--;
         }
 
+        /* Define the memory store */
+        inst.setStoreAccess(mem, node);
+
         /* If there is only one reference, we return the symbolic expression */
         if (ret.size() == 1) {
           /* Synchronize the concrete state */
-          this->architecture->setConcreteMemoryValue(mem, tmp->evaluate());
-          /* Define the memory store */
-          inst.setStoreAccess(mem, node);
-          /* It will return se */
+          this->architecture->setConcreteMemoryValue(mem, ret.front()->evaluate());
+          /* return the symbolic expression */
           return inst.symbolicExpressions.back();
         }
 
@@ -860,11 +1013,9 @@ namespace triton {
         /* Synchronize the concrete state */
         this->architecture->setConcreteMemoryValue(mem, tmp->evaluate());
 
+        /* Otherwise, we return the concatenation of all symbolic expressions */
         se = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Temporary concatenation reference - " + comment);
         se->setOriginMemory(triton::arch::MemoryAccess(address, mem.getSize()));
-
-        /* Set explicit write of the memory access */
-        inst.setStoreAccess(mem, node);
 
         /* Set implicit read of the base register (LEA) */
         if (this->architecture->isRegisterValid(mem.getConstBaseRegister()))
@@ -978,6 +1129,48 @@ namespace triton {
       }
 
 
+      /* Assigns a symbolic expression to a memory according to the BV logic */
+      void SymbolicEngine::assignBVSymbolicExpressionToMemory(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node) {
+        /* For each byte, create a new symbolic expression */
+        const SharedSymbolicExpression& se = this->newSymbolicExpression(node, MEMORY_EXPRESSION, "Byte reference");
+
+        /* Set the origin of the symbolic expression */
+        se->setOriginMemory(triton::arch::MemoryAccess(mem.getAddress() + index, BYTE_SIZE));
+
+        /* Assign memory in the BV memory model */
+        this->addMemoryReference(mem.getAddress() + index, se);
+      }
+
+
+      /* Assigns a symbolic expression to a memory according to the ABV logic */
+      void SymbolicEngine::assignABVSymbolicExpressionToMemory(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node) {
+        triton::ast::SharedAbstractNode newArray = nullptr;
+        triton::ast::SharedAbstractNode lea      = mem.getLeaAst();
+        SharedSymbolicExpression se              = nullptr;
+        triton::uint32 size                      = this->architecture->gprBitSize();
+
+        /* If the LEA exists, keep it symbolic */
+        if (lea != nullptr) {
+          newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), this->astCtxt->bvadd(lea, this->astCtxt->bv(index, size)), node);
+        }
+
+        /* Otherwise, concretize the memory indexing */
+        else {
+          newArray = this->astCtxt->store(this->astCtxt->reference(this->symbolicArray), mem.getAddress() + index, node);
+        }
+
+        /* Create the new symbolic expression */
+        se = this->newSymbolicExpression(newArray, MEMORY_EXPRESSION, "Byte reference");
+
+        /* Assigne the new memory state */
+        // FIXME: Trop de dependances liées les unes aux autres. On tombe dans le probleme #753.
+        this->symbolicArray = se;
+
+        /* Defines the origin of the expression */
+        se->setOriginMemory(triton::arch::MemoryAccess(mem.getAddress() + index, BYTE_SIZE));
+      }
+
+
       /* Assigns a symbolic expression to a memory */
       void SymbolicEngine::assignSymbolicExpressionToMemory(const SharedSymbolicExpression& se, const triton::arch::MemoryAccess& mem) {
         const triton::ast::SharedAbstractNode& node = se->getAst();
@@ -1000,17 +1193,25 @@ namespace triton {
         while (writeSize) {
           triton::uint32 high = ((writeSize * BYTE_SIZE_BIT) - 1);
           triton::uint32 low  = ((writeSize * BYTE_SIZE_BIT) - BYTE_SIZE_BIT);
-          /* Extract each byte of the memory */
-          const triton::ast::SharedAbstractNode& tmp = this->astCtxt->extract(high, low, node);
-          /* For each byte create a new symbolic expression */
-          const SharedSymbolicExpression& byteRef = this->newSymbolicExpression(tmp, MEMORY_EXPRESSION, "Byte reference");
-          /* Set the origin of the symbolic expression */
-          byteRef->setOriginMemory(triton::arch::MemoryAccess(((address + writeSize) - 1), BYTE_SIZE));
-          /* Assign memory with little endian */
-          this->addMemoryReference((address + writeSize) - 1, byteRef);
+
+          /* ---------- Update the BV memory model ----------- */
+          this->assignBVSymbolicExpressionToMemory(mem, writeSize - 1, this->astCtxt->extract(high, low, node));
+
+          /* ---------- Update the ABV memory model ---------- */
+          if (this->modes->isModeEnabled(triton::modes::SYMBOLIC_STORE)) {
+            // FIXME: Trop de dependences liées les unes aux autres. On tombe dans le probleme #753.
+            // NOTE: À discuter, ici, il faudrait garder une synchro entre les deux modèles. Le problème, c'est que lie trop
+            // de dépendances les unes aux autres. Du coup, on update symbolicArray que si le mode est activé. Ce qui implique
+            // de devoir faire la synchro dès lorsque le SYMBOLIC_STORE/READ est activé...
+            this->assignABVSymbolicExpressionToMemory(mem, writeSize - 1, this->astCtxt->extract(high, low, node));
+          }
+
           /* continue */
           writeSize--;
         }
+
+        /* Synchronize the concrete state */
+        this->architecture->setConcreteMemoryValue(mem, se->getAst()->evaluate());
       }
 
 

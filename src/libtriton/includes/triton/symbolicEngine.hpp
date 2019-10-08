@@ -107,6 +107,9 @@ namespace triton {
           //! Symbolic register state.
           std::vector<SharedSymbolicExpression> symbolicReg;
 
+          //! Symbolic array. Used when SYMBOLIC_LOAD and SYMBOLIC_STORE are enabled.
+          SharedSymbolicExpression symbolicArray;
+
         private:
           //! Reference to the context managing ast nodes.
           triton::ast::SharedAstContext astCtxt;
@@ -146,6 +149,31 @@ namespace triton {
 
           //! Returns the AST corresponding to the extend operation. Mainly used for AArch64 operands.
           triton::ast::SharedAbstractNode getExtendAst(triton::arch::aarch64::extend_e type, triton::uint32 size, const triton::ast::SharedAbstractNode& node);
+
+          //! Convert a memory cell to a symbolic variable according to the BV logic.
+          void convertBVMemoryToSymbolicVariable(const triton::arch::MemoryAccess& mem, triton::sint32 index, const triton::ast::SharedAbstractNode& memNode);
+
+          //! Convert a memory cell to a symbolic variable according to the ABV logic.
+          void convertABVMemoryToSymbolicVariable(const triton::arch::MemoryAccess& mem, triton::sint32 index, const triton::ast::SharedAbstractNode& memNode);
+
+          //! Returns the AST corresponding to the memory according the QF_BV logic.
+          void getABVMemoryAst(const triton::arch::MemoryAccess& mem, triton::uint32 index, std::list<triton::ast::SharedAbstractNode>& out);
+
+          //! Returns the AST corresponding to the memory according the QF_ABV logic.
+          void getBVMemoryAst(const triton::arch::MemoryAccess& mem, triton::uint32 index, triton::uint512& value, std::list<triton::ast::SharedAbstractNode>& out);
+
+          //! Assigns a symbolic expression to a memory according to the BV logic.
+          void assignBVSymbolicExpressionToMemory(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node);
+
+          //! Assigns a symbolic expression to a memory according to the BV logic.
+          void assignABVSymbolicExpressionToMemory(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node);
+
+          //! Create a new symbolic memory expression according to the BV logic.
+          SharedSymbolicExpression createBVSymbolicMemoryExpression(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node, const std::string& comment, std::list<triton::ast::SharedAbstractNode>& out);
+
+          //! Create a new symbolic memory expression according to the ABV logic.
+          SharedSymbolicExpression createABVSymbolicMemoryExpression(const triton::arch::MemoryAccess& mem, triton::uint32 index, const triton::ast::SharedAbstractNode& node, const std::string& comment, std::list<triton::ast::SharedAbstractNode>& out);
+
 
         public:
           //! Constructor.

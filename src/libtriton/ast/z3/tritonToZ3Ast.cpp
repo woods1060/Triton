@@ -67,6 +67,17 @@ namespace triton {
       }
 
       switch (node->getType()) {
+        case ARRAY_NODE: {
+          auto size  = reinterpret_cast<IntegerNode*>(node->getChildren()[0].get())->getInteger().convert_to<triton::uint32>();
+          auto isort = this->context.bv_sort(size);
+          auto value = this->context.bv_val(0, 8);
+          return to_expr(this->context, Z3_mk_const_array(this->context, isort, value));
+          // Array (non const) below
+          //auto vsort = this->context.bv_sort(8);
+          //auto asort = this->context.array_sort(isort, vsort);
+          //return this->context.constant("Memory", asort);
+        }
+
         case BVADD_NODE:
           return to_expr(this->context, Z3_mk_bvadd(this->context, children[0], children[1]));
 
@@ -273,6 +284,12 @@ namespace triton {
 
         case REFERENCE_NODE:
           return results->at(reinterpret_cast<triton::ast::ReferenceNode*>(node.get())->getSymbolicExpression()->getAst());
+
+        case SELECT_NODE:
+          return to_expr(this->context, Z3_mk_select(this->context, children[0], children[1]));
+
+        case STORE_NODE:
+          return to_expr(this->context, Z3_mk_store(this->context, children[0], children[1], children[2]));
 
         case STRING_NODE: {
           std::string value = reinterpret_cast<triton::ast::StringNode*>(node.get())->getString();

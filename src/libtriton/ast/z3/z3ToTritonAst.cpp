@@ -37,6 +37,8 @@ namespace triton {
       /* All z3's AST nodes supported */
       switch (function.decl_kind()) {
 
+        // FIXME: Array
+
         case Z3_OP_EQ: {
           if (expr.num_args() != 2)
             throw triton::exceptions::AstTranslations("Z3ToTritonAst::visit(): Z3_OP_EQ must contain two arguments.");
@@ -397,6 +399,20 @@ namespace triton {
           if (expr.num_args() != 1)
             throw triton::exceptions::AstTranslations("Z3ToTritonAst::visit(): Z3_OP_ROTATE_RIGHT must contain one argument.");
           node = this->astCtxt->bvror(this->convert(expr.arg(0)), expr.hi());
+          break;
+        }
+
+        case Z3_OP_SELECT: {
+          if (expr.num_args() != 2)
+            throw triton::exceptions::AstTranslations("Z3ToTritonAst::visit(): Z3_OP_SELECT must contain two argument.");
+          node = this->astCtxt->select(this->convert(expr.arg(0)), this->convert(expr.arg(1)));
+          break;
+        }
+
+        case Z3_OP_STORE: {
+          if (expr.num_args() != 3)
+            throw triton::exceptions::AstTranslations("Z3ToTritonAst::visit(): Z3_OP_STORE must contain three argument.");
+          node = this->astCtxt->store(this->convert(expr.arg(0)), this->convert(expr.arg(1)), this->convert(expr.arg(2)));
           break;
         }
 

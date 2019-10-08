@@ -59,6 +59,9 @@ namespace triton {
         //! Map a concrete value and ast node for a variable name.
         std::map<std::string, std::pair<triton::ast::WeakAbstractNode, triton::uint512>> valueMapping;
 
+        //! The size of the address space used for the ABV logic.
+        triton::uint16 arraySize;
+
       public:
         //! Constructor
         TRITON_EXPORT AstContext(const triton::modes::SharedModes& modes);
@@ -71,6 +74,9 @@ namespace triton {
 
         //! Operator
         TRITON_EXPORT AstContext& operator=(const AstContext& other);
+
+        //! AST C++ API - array node builder
+        TRITON_EXPORT SharedAbstractNode array(triton::uint32 addrSize);
 
         //! AST C++ API - assert node builder
         TRITON_EXPORT SharedAbstractNode assert_(const SharedAbstractNode& expr);
@@ -252,6 +258,18 @@ namespace triton {
         //! AST C++ API - reference node builder
         TRITON_EXPORT SharedAbstractNode reference(const triton::engines::symbolic::SharedSymbolicExpression& expr);
 
+        //! AST C++ API - select node builder
+        TRITON_EXPORT SharedAbstractNode select(const SharedAbstractNode& array, triton::usize index);
+
+        //! AST C++ API - select node builder
+        TRITON_EXPORT SharedAbstractNode select(const SharedAbstractNode& array, const SharedAbstractNode& index);
+
+        //! AST C++ API - store node builder
+        TRITON_EXPORT SharedAbstractNode store(const SharedAbstractNode& array, triton::usize index, const SharedAbstractNode& expr);
+
+        //! AST C++ API - store node builder
+        TRITON_EXPORT SharedAbstractNode store(const SharedAbstractNode& array, const SharedAbstractNode& index, const SharedAbstractNode& expr);
+
         //! AST C++ API - string node builder
         TRITON_EXPORT SharedAbstractNode string(std::string value);
 
@@ -284,6 +302,9 @@ namespace triton {
 
         //! Print the given node with this context representation
         TRITON_EXPORT std::ostream& print(std::ostream& stream, AbstractNode* node);
+
+        //! Returns the address space used for the ABV logic.
+        TRITON_EXPORT triton::uint16 getArraySize(void) const;
     };
 
     //! Shared AST context

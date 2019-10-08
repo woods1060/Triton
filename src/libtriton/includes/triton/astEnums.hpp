@@ -29,10 +29,11 @@ namespace triton {
     enum ast_e {
       INVALID_NODE = 0,               /*!< Invalid node */
       ANY_NODE = 0,                   /*!< Any node */
-      ASSERT_NODE = 3,                /*!< (assert x) */
-      BVADD_NODE = 5,                 /*!< (bvadd x y) */
-      BVAND_NODE = 7,                 /*!< (bvand x y) */
-      BVASHR_NODE = 12,               /*!< (bvashr x y) */
+      ARRAY_NODE = 3,                 /*!< (Array (_ BitVec addrSize) (_ BitVec 8)) */
+      ASSERT_NODE = 5,                /*!< (assert x) */
+      BVADD_NODE = 7,                 /*!< (bvadd x y) */
+      BVAND_NODE = 11,                /*!< (bvand x y) */
+      BVASHR_NODE = 13,               /*!< (bvashr x y) */
       BVLSHR_NODE = 17,               /*!< (bvlshr x y) */
       BVMUL_NODE = 19,                /*!< (bvmul x y) */
       BVNAND_NODE = 23,               /*!< (bvnand x y) */
@@ -74,10 +75,12 @@ namespace triton {
       LNOT_NODE = 197,                /*!< (and x y) */
       LOR_NODE = 199,                 /*!< (or x y) */
       REFERENCE_NODE = 211,           /*!< Reference node */
-      STRING_NODE = 223,              /*!< String node */
-      SX_NODE = 227,                  /*!< ((_ sign_extend x) y) */
-      VARIABLE_NODE = 229,            /*!< Variable node */
-      ZX_NODE = 233,                  /*!< ((_ zero_extend x) y) */
+      SELECT_NODE = 223,              /*!< (select array index) */
+      STORE_NODE = 227,               /*!< (store array index expr) */
+      STRING_NODE = 229,              /*!< String node */
+      SX_NODE = 233,                  /*!< ((_ sign_extend x) y) */
+      VARIABLE_NODE = 239,            /*!< Variable node */
+      ZX_NODE = 241,                  /*!< ((_ zero_extend x) y) */
     };
 
     //! The Representations namespace
