@@ -39,6 +39,13 @@ namespace triton {
         this->uniqueSymVarId    = 0;
         this->symbolicArray     = this->newSymbolicExpression(this->astCtxt->array(architecture->gprBitSize()), MEMORY_EXPRESSION, "Initial Memory Array");
 
+        /*
+         * Tell to the AstContext to use this symbolic engine.
+         * Mainly used to evaluate a symbolic select node.
+         */
+        this->astCtxt->setSymbolicEngine(this);
+
+        /* Define the number of symbolic registers. */
         this->symbolicReg.resize(this->numberOfRegisters);
       }
 
@@ -61,6 +68,14 @@ namespace triton {
         this->symbolicVariables           = other.symbolicVariables;
         this->uniqueSymExprId             = other.uniqueSymExprId;
         this->uniqueSymVarId              = other.uniqueSymVarId;
+
+        // FIXME: What about this->astCtxt->setSymbolicEngine
+      }
+
+
+      SymbolicEngine::~SymbolicEngine() {
+        /* We must tell to the AstContext that there is no more symbolic engine available. */
+        this->astCtxt->setSymbolicEngine(nullptr);
       }
 
 
@@ -82,6 +97,8 @@ namespace triton {
         this->symbolicVariables           = other.symbolicVariables;
         this->uniqueSymExprId             = other.uniqueSymExprId;
         this->uniqueSymVarId              = other.uniqueSymVarId;
+
+        // FIXME: What about this->astCtxt->setSymbolicEngine
 
         return *this;
       }

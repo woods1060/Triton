@@ -2240,7 +2240,7 @@ namespace triton {
         throw triton::exceptions::Ast("SelectNode::init(): Size of indexing must be equal.");
 
       /* Init attributes */
-      this->eval = 0; // FIXME: Should be the evaluation of the returned expression.
+      this->eval = this->ctxt->symbolicLoadEvaluation(this->children[1].get());
       this->size = 8; // Select returns a node of type (_ BitVec 8). In others words, it returns the memory cell read.
 
       /* Init children and spread information */

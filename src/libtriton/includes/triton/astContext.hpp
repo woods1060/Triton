@@ -30,6 +30,8 @@ namespace triton {
   /* Forward declarations */
   namespace engines {
     namespace symbolic {
+      class SymbolicEngine;
+
       class SymbolicExpression;
       using SharedSymbolicExpression = std::shared_ptr<triton::engines::symbolic::SymbolicExpression>;
 
@@ -61,6 +63,9 @@ namespace triton {
 
         //! The size of the address space used for the ABV logic.
         triton::uint16 arraySize;
+
+        //! A pointer to the symbolic engine. Mainly used to evaluate select nodes.
+        triton::engines::symbolic::SymbolicEngine* symbolic;
 
       public:
         //! Constructor
@@ -305,6 +310,12 @@ namespace triton {
 
         //! Returns the address space used for the ABV logic.
         TRITON_EXPORT triton::uint16 getArraySize(void) const;
+
+        //! Define a symbolic engine for the evaulation of select node.
+        TRITON_EXPORT void setSymbolicEngine(triton::engines::symbolic::SymbolicEngine* symbolic);
+
+        //! Returns the symbolic evaluation of a select node.
+        TRITON_EXPORT triton::uint8 symbolicLoadEvaluation(AbstractNode* node);
     };
 
     //! Shared AST context

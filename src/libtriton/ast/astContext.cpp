@@ -10,6 +10,7 @@
 #include <triton/ast.hpp>
 #include <triton/astContext.hpp>
 #include <triton/exceptions.hpp>
+#include <triton/symbolicEngine.hpp>
 #include <triton/symbolicExpression.hpp>
 #include <triton/symbolicVariable.hpp>
 
@@ -21,6 +22,7 @@ namespace triton {
     AstContext::AstContext(const triton::modes::SharedModes& modes)
       : modes(modes) {
       this->arraySize = 0;
+      this->symbolic  = nullptr;
     }
 
 
@@ -29,11 +31,13 @@ namespace triton {
         modes(other.modes),
         astRepresentation(other.astRepresentation),
         valueMapping(other.valueMapping) {
-      this->arraySize = 0;
+      this->arraySize = other.arraySize;
+      this->symbolic  = other.symbolic;
     }
 
 
     AstContext::~AstContext() {
+      this->symbolic = nullptr;
       this->valueMapping.clear();
     }
 
@@ -44,6 +48,7 @@ namespace triton {
       this->arraySize         = other.arraySize;
       this->astRepresentation = other.astRepresentation;
       this->modes             = other.modes;
+      this->symbolic          = other.symbolic;
       this->valueMapping      = other.valueMapping;
 
       return *this;
@@ -877,6 +882,28 @@ namespace triton {
 
     triton::uint16 AstContext::getArraySize(void) const {
       return this->arraySize;
+    }
+
+
+    void AstContext::setSymbolicEngine(triton::engines::symbolic::SymbolicEngine* symbolic) {
+      this->symbolic = symbolic;
+    }
+
+
+    triton::uint8 AstContext::symbolicLoadEvaluation(AbstractNode* node) {
+      triton::uint64 address = node->evaluate().convert_to<triton::uint64>();
+      triton::uint8 value    = 0;
+      bool saveMode          = this->modes->isModeEnabled(triton::modes::SYMBOLIC_LOAD);
+
+      /* Disable the symbolic load before calling getSymbolicMemoryValue */
+      this->modes->enableMode(triton::modes::SYMBOLIC_LOAD, false);
+
+      value = this->symbolic->getSymbolicMemoryValue(address);
+
+      /* Restore the mode */
+      this->modes->enableMode(triton::modes::SYMBOLIC_LOAD, saveMode);
+
+      return value;
     }
 
   }; /* ast namespace */
