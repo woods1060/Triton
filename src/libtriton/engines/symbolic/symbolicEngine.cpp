@@ -68,8 +68,6 @@ namespace triton {
         this->symbolicVariables           = other.symbolicVariables;
         this->uniqueSymExprId             = other.uniqueSymExprId;
         this->uniqueSymVarId              = other.uniqueSymVarId;
-
-        // FIXME: What about this->astCtxt->setSymbolicEngine
       }
 
 
@@ -97,8 +95,6 @@ namespace triton {
         this->symbolicVariables           = other.symbolicVariables;
         this->uniqueSymExprId             = other.uniqueSymExprId;
         this->uniqueSymVarId              = other.uniqueSymVarId;
-
-        // FIXME: What about this->astCtxt->setSymbolicEngine
 
         return *this;
       }
