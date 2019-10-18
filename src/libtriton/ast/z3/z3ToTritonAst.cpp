@@ -37,7 +37,13 @@ namespace triton {
       /* All z3's AST nodes supported */
       switch (function.decl_kind()) {
 
-        // FIXME: Array
+        case Z3_OP_CONST_ARRAY: {
+          triton::uint16 arraySize = this->astCtxt->getArraySize();
+          if (arraySize == 0)
+            throw triton::exceptions::AstTranslations("Z3ToTritonAst::visit(): Z3_OP_CONST_ARRAY array size cannot be zero.");
+          node = this->astCtxt->array(arraySize);
+          break;
+        }
 
         case Z3_OP_EQ: {
           if (expr.num_args() != 2)
