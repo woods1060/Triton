@@ -434,6 +434,8 @@ namespace triton {
      * In order to synchronize the concrete state with the symbolic
      * one, the symbolic expression is concretized.
      */
+    auto node = this->getMemoryAst(triton::arch::MemoryAccess(addr, 1));
+    this->pushPathConstraint(this->astCtxt->equal(node, this->astCtxt->bv(value, 8)));
     this->concretizeMemory(addr);
   }
 
@@ -445,6 +447,8 @@ namespace triton {
      * In order to synchronize the concrete state with the symbolic
      * one, the symbolic expression is concretized.
      */
+    auto node = this->getMemoryAst(mem);
+    this->pushPathConstraint(this->astCtxt->equal(node, this->astCtxt->bv(value, node->getBitvectorSize())));
     this->concretizeMemory(mem);
   }
 
@@ -457,6 +461,8 @@ namespace triton {
      * one, the symbolic expression is concretized.
      */
     for (triton::usize index = 0 ; index < values.size() ; index++) {
+      auto node = this->getMemoryAst(triton::arch::MemoryAccess(baseAddr + index, 1));
+      this->pushPathConstraint(this->astCtxt->equal(node, this->astCtxt->bv(values[index], node->getBitvectorSize())));
       this->concretizeMemory(baseAddr + index);
     }
   }
@@ -470,6 +476,8 @@ namespace triton {
      * one, the symbolic expression is concretized.
      */
     for (triton::usize index = 0 ; index < size ; index++) {
+      auto node = this->getMemoryAst(triton::arch::MemoryAccess(baseAddr + index, 1));
+      this->pushPathConstraint(this->astCtxt->equal(node, this->astCtxt->bv(area[index], node->getBitvectorSize())));
       this->concretizeMemory(baseAddr + index);
     }
   }
@@ -482,6 +490,8 @@ namespace triton {
      * In order to synchronize the concrete state with the symbolic
      * one, the symbolic expression is concretized.
      */
+    auto node = this->getRegisterAst(reg);
+    this->pushPathConstraint(this->astCtxt->equal(node, this->astCtxt->bv(value, node->getBitvectorSize())));
     this->concretizeRegister(reg);
   }
 
